@@ -7,6 +7,7 @@
 //
 
 import UIKit
+import AVFoundation
 
 class ImagesViewController: UIViewController {
     
@@ -44,15 +45,24 @@ class ImagesViewController: UIViewController {
     
     private func appendNewPhoto() {
         //1. need to set image to data
-        //   jpegData will also change the size of the image.
-        guard let image = selectedImage,
-            let imageData = image.jpegData(compressionQuality: 1.0) else {
-                print("image is nil")
-                return
+        guard let image = selectedImage else {
+            print("image is nil")
+            return
         }
+        //resize image:
+        let size = UIScreen.main.bounds.size
+        // maintain aspect ratio (orientation) of the image ==> need to import AVFoundation, use AVMakeRect()
+        let rect = AVMakeRect(aspectRatio: image.size, insideRect: CGRect(origin: CGPoint.zero, size: size))
+        let resizeImage = image.resizeImage(to: rect.size.width, height: rect.size.height)
+        
+        //1a. jpegData will also change the size of the image.
+        guard let resizedImageData = resizeImage.jpegData(compressionQuality: 1.0) else {
+            return
+        }
+        print("image size: \(resizeImage.size)")
         
         //2. create an image object
-        let imageObject = ImageObject(imageData: imageData, date: Date())
+        let imageObject = ImageObject(imageData: resizedImageData, date: Date())
         
         //3. insert to object to imageObjects
         imageObjects.insert(imageObject, at: 0)
@@ -88,7 +98,6 @@ class ImagesViewController: UIViewController {
         }
         let cancel = UIAlertAction(title: "Cancel", style: .cancel)
         
-        
         //3. check if camera is accessable/ available for app use
         //   if the camera is not available the app will crash
         if UIImagePickerController.isSourceTypeAvailable(.camera) {
@@ -122,12 +131,53 @@ extension ImagesViewController: UICollectionViewDataSource {
     }
     
     func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
+        
+        //Custom Delegate - 4. must have an instance of object/ cell
         guard let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "imageCell", for: indexPath) as? ImageCell else {
             fatalError("could not downcast to an ImageCell")
         }
         let imageObj = imageObjects[indexPath.row]
         cell.configureCell(image: imageObj)
+        
+        //Custom Delegate - 5. set delegate object
+        cell.delegate = self
+        
         return cell
+    }
+}
+//Custom Delegate - 6. conform to delegate
+extension ImagesViewController: ImageCellDelegate {
+    func didLongPress(_ imageCell: ImageCell) {
+        guard let indexPath = collectionView.indexPath(for: imageCell) else {
+            return
+        }
+        
+        //present an action sheet : delete, cancel
+        let alertController = UIAlertController(title: nil, message: nil, preferredStyle: .actionSheet)
+        let deleteAction = UIAlertAction(title: "Delete", style: .destructive) { [weak self] alertAction in
+            self?.deleteImage(indexPath: indexPath)
+        }
+        let cancelAction = UIAlertAction(title: "Cancel", style: .cancel)
+        
+        alertController.addAction(deleteAction)
+        alertController.addAction(cancelAction)
+        
+        present(alertController, animated: true)
+    }
+    
+    //allow user to delete cell
+    private func deleteImage(indexPath: IndexPath) {
+        
+        do {
+            //1. delete image object from documents directory
+            try dataPersistance.delete(event: indexPath.row)
+            //2. delete imageObject from imageObjects
+            imageObjects.remove(at: indexPath.row)
+            //3. delete cell from collection view
+            collectionView.reloadItems(at: [indexPath])
+        } catch {
+            print("error deleting cell")
+        }
     }
 }
 
